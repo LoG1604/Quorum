@@ -3,21 +3,45 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
-import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs';
+import { createClient } from '@/utils/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 export function Navbar() {
     const { theme, setTheme } = useTheme();
     const [mounted, setMounted] = React.useState(false);
     const [menuOpen, setMenuOpen] = React.useState(false);
+    const [user, setUser] = React.useState<User | null>(null);
 
-    React.useEffect(() => setMounted(true), []);
+    React.useEffect(() => {
+        setMounted(true);
+        const supabase = createClient();
+
+        // Get current session on mount
+        supabase.auth.getUser().then(({ data }) => {
+            setUser(data.user);
+        });
+
+        // Listen for auth changes (login/logout)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
-    const navItems = ['Model Status', 'Resume', 'Email', 'Jobs', 'Setup Keys'];
+    const handleSignOut = async () => {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+        window.location.href = '/';
+    };
 
+    const navItems = ['Model Status', 'Resume', 'Email', 'Jobs', 'Setup Keys'];
     const hrefFor = (label: string) =>
-        label === 'Setup Keys' ? '/dashboard/settings' : `/dashboard#${label.toLowerCase().replace(' ', '-')}`;
+        label === 'Setup Keys'
+            ? '/dashboard/settings'
+            : `/dashboard#${label.toLowerCase().replace(' ', '-')}`;
 
     return (
         <>
@@ -27,13 +51,11 @@ export function Navbar() {
                 </Link>
 
                 <div className="hidden items-center gap-6 md:flex">
-                    <Show when="signed-in">
-                        {navItems.map((label) => (
-                            <Link key={label} href={hrefFor(label)} className="label hover:underline">
-                                {label}
-                            </Link>
-                        ))}
-                    </Show>
+                    {user && navItems.map((label) => (
+                        <Link key={label} href={hrefFor(label)} className="label hover:underline">
+                            {label}
+                        </Link>
+                    ))}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -47,22 +69,16 @@ export function Navbar() {
                         {mounted && theme === 'dark' ? <SunIcon /> : <MoonIcon />}
                     </button>
 
-                    <Show when="signed-out">
-                        <SignInButton mode="modal">
-                            <button type="button" className="btn-outline">
-                                Sign in
-                            </button>
-                        </SignInButton>
-                        <SignUpButton mode="modal">
-                            <button type="button" className="btn-primary">
-                                Sign up
-                            </button>
-                        </SignUpButton>
-                    </Show>
-
-                    <Show when="signed-in">
-                        <UserButton />
-                    </Show>
+                    {!user ? (
+                        <>
+                            <Link href="/login" className="btn-outline">Sign in</Link>
+                            <Link href="/signup" className="btn-primary">Sign up</Link>
+                        </>
+                    ) : (
+                        <button type="button" onClick={handleSignOut} className="btn-outline">
+                            Sign out
+                        </button>
+                    )}
 
                     <button
                         type="button"
@@ -85,31 +101,27 @@ export function Navbar() {
                     ×
                 </button>
 
-                <Show when="signed-in">
-                    {navItems.map((label) => (
-                        <Link
-                            key={label}
-                            href={hrefFor(label)}
-                            onClick={() => setMenuOpen(false)}
-                            className="font-display text-2xl"
-                        >
-                            {label}
-                        </Link>
-                    ))}
-                </Show>
+                {user && navItems.map((label) => (
+                    <Link
+                        key={label}
+                        href={hrefFor(label)}
+                        onClick={() => setMenuOpen(false)}
+                        className="font-display text-2xl"
+                    >
+                        {label}
+                    </Link>
+                ))}
 
-                <Show when="signed-out">
-                    <SignInButton mode="modal">
-                        <button type="button" className="btn-outline w-full" onClick={() => setMenuOpen(false)}>
+                {!user && (
+                    <>
+                        <Link href="/login" onClick={() => setMenuOpen(false)} className="btn-outline w-full">
                             Sign in
-                        </button>
-                    </SignInButton>
-                    <SignUpButton mode="modal">
-                        <button type="button" className="btn-primary w-full" onClick={() => setMenuOpen(false)}>
+                        </Link>
+                        <Link href="/signup" onClick={() => setMenuOpen(false)} className="btn-primary w-full">
                             Sign up
-                        </button>
-                    </SignUpButton>
-                </Show>
+                        </Link>
+                    </>
+                )}
             </div>
         </>
     );

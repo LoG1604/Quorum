@@ -1,8 +1,26 @@
+'use client';
+
+import * as React from 'react';
 import Link from 'next/link';
-import { Show, SignUpButton } from '@clerk/nextjs';
+import { createClient } from '@/utils/supabase/client';
+import type { User } from '@supabase/supabase-js';
 import { Navbar } from '@/components/navbar';
+import { Footer } from '@/components/footer';
 
 export default function Home() {
+  const [user, setUser] = React.useState<User | null>(null);
+
+  React.useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <>
       <Navbar />
@@ -21,19 +39,20 @@ export default function Home() {
         </p>
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Show when="signed-out">
-            <SignUpButton mode="modal">
-              <button type="button" className="btn-primary">
-                Get started
-              </button>
-            </SignUpButton>
-          </Show>
-
-          <Show when="signed-in">
+          {user ? (
             <Link href="/dashboard" className="btn-primary">
               Go to dashboard
             </Link>
-          </Show>
+          ) : (
+            <>
+              <Link href="/signup" className="btn-primary">
+                Get started
+              </Link>
+              <Link href="/login" className="btn-outline">
+                Sign in
+              </Link>
+            </>
+          )}
         </div>
 
         <div className="mt-12 grid w-full gap-4 text-left sm:grid-cols-3">
@@ -57,6 +76,8 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      <Footer />
     </>
   );
 }

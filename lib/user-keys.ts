@@ -1,5 +1,5 @@
-import { auth } from '@clerk/nextjs/server';
-import { createServiceRoleClient } from './supabase';
+import { createClient } from '@/utils/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase';
 import { encrypt, decrypt } from './encryption';
 
 export interface UserApiKeys {
@@ -32,12 +32,14 @@ function safeDecrypt(value: string | null): string | undefined {
   }
 }
 
-/**
- * Returns the signed-in user's decrypted API keys, or null if nobody is
- * signed in. Any key the user hasn't set yet is simply undefined.
- */
+async function getAuthenticatedUserId(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
 export async function getUserApiKeys(): Promise<UserApiKeysResult | null> {
-  const { userId } = await auth();
+  const userId = await getAuthenticatedUserId();
   if (!userId) return null;
 
   const supabase = createServiceRoleClient();
@@ -52,10 +54,7 @@ export async function getUserApiKeys(): Promise<UserApiKeysResult | null> {
   }
 
   const row = data as UserApiKeysRow | null;
-
-  if (!row) {
-    return { userId, keys: {} };
-  }
+  if (!row) return { userId, keys: {} };
 
   return {
     userId,
@@ -68,15 +67,9 @@ export async function getUserApiKeys(): Promise<UserApiKeysResult | null> {
   };
 }
 
-/**
- * Saves any provided keys for the signed-in user. Fields left undefined are
- * not touched — pass an empty string explicitly to clear a key.
- */
 export async function saveUserApiKeys(partial: UserApiKeys): Promise<void> {
-  const { userId } = await auth();
-  if (!userId) {
-    throw new Error('Not authenticated.');
-  }
+  const userId = await getAuthenticatedUserId();
+  if (!userId) throw new Error('Not authenticated.');
 
   const supabase = createServiceRoleClient();
 
@@ -99,15 +92,9 @@ export async function saveUserApiKeys(partial: UserApiKeys): Promise<void> {
   }
 
   const { error } = await supabase.from('user_api_keys').upsert(update);
-  if (error) {
-    throw new Error(`Failed to save API keys: ${error.message}`);
-  }
+  if (error) throw new Error(`Failed to save API keys: ${error.message}`);
 }
 
-/**
- * Returns which keys are set (booleans only) — safe to send to the client,
- * since it never includes the actual decrypted secret values.
- */
 export async function getUserApiKeyStatus(): Promise<{
   groq: boolean;
   adzunaAppId: boolean;
